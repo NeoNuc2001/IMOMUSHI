@@ -1,0 +1,215 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Touch Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden; /* スクロール防止 */
+        height: 100%;
+        background: #f0f0f0;
+        touch-action: none; /* ジェスチャースクロール防止 */
+      }
+    </style>
+    <script>// ...既存の<script>タグ内のどこかに追加...
+      function requestFullscreenIfLandscape() {
+        // 横画面なら全画面をリクエスト
+        if (window.innerWidth > window.innerHeight) {
+          const elem = document.documentElement;
+          if (elem.requestFullscreen) {
+            elem.requestFullscreen();
+          } else if (elem.webkitRequestFullscreen) { // Safari
+            elem.webkitRequestFullscreen();
+          } else if (elem.msRequestFullscreen) { // IE11
+            elem.msRequestFullscreen();
+          }
+        }
+      }
+
+      // 画面の向きが変わったときにチェック
+      window.addEventListener('orientationchange', requestFullscreenIfLandscape);
+      window.addEventListener('resize', requestFullscreenIfLandscape);
+
+      // 初回ロード時にもチェック
+      requestFullscreenIfLandscape();
+      </script>
+
+  </head>
+  <body>
+    <canvas id="panelCanvas" style="position:absolute;top:0;left:0;width:100vw;height:100vh;"></canvas>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+      const socket = io();
+
+      // パネル設定
+      const PANEL_COLS = 16;
+      const PANEL_ROWS = 2;
+      const PANEL_COUNT = PANEL_COLS * PANEL_ROWS;
+      const panelColors = Array(PANEL_COUNT).fill('#cccccc');
+      let activePanel = [];
+
+      const canvas = document.getElementById('panelCanvas');
+      const ctx = canvas.getContext('2d');
+
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        drawPanels();
+      }
+
+      function drawPanels() {
+        const w = canvas.width;
+        const h = canvas.height;
+        const panelWidth = w / PANEL_COLS;
+        const panelHeight = h / PANEL_ROWS;
+        for (let row = 0; row < PANEL_ROWS; row++) {
+          for (let col = 0; col < PANEL_COLS; col++) {
+            const idx = row * PANEL_COLS + col;
+            ctx.fillStyle = (activePanel.includes(idx)) ? '#ff8888' : panelColors[idx];
+            ctx.fillRect(col * panelWidth, row * panelHeight, panelWidth, panelHeight);
+            ctx.strokeStyle = '#888';
+            ctx.strokeRect(col * panelWidth, row * panelHeight, panelWidth, panelHeight);
+          }
+        }
+      }
+
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      let isTouching = false;
+      let lastTouch = { x: 0, y: 0 };
+      let prevTouching = false;
+      let prevPanels = new Set();
+
+      function sendTouchInfo(touching, panel) {
+        console.log("sendTouchInfo", touching, panel);
+        socket.emit('tap_event', {
+          touching: touching,
+          panel: panel,
+        });
+      }
+
+      function getPanelIndices(x, y, radiusX, radiusY) {
+        const w = canvas.width;
+        const h = canvas.height;
+        const panelWidth = w / PANEL_COLS;
+        const panelHeight = h / PANEL_ROWS;
+
+        // Calculate the bounding box of the touch ellipse
+        const minX = Math.max(0, x - radiusX);
+        const maxX = Math.min(w, x + radiusX);
+        const minY = Math.max(0, y - radiusY);
+        const maxY = Math.min(h, y + radiusY);
+
+        const indices = new Set();
+
+        // Check all panels that intersect the bounding box
+        for (let row = 0; row < PANEL_ROWS; row++) {
+          for (let col = 0; col < PANEL_COLS; col++) {
+        const panelLeft = col * panelWidth;
+        const panelRight = (col + 1) * panelWidth;
+        const panelTop = row * panelHeight;
+        const panelBottom = (row + 1) * panelHeight;
+
+        // Check if panel and ellipse bounding box overlap
+        if (
+          panelRight > minX &&
+          panelLeft < maxX &&
+          panelBottom > minY &&
+          panelTop < maxY
+        ) {
+          indices.add(row * PANEL_COLS + col);
+        }
+          }
+        }
+        return Array.from(indices);
+      }
+
+      function getTouchedPanels(touches) {
+        const panels = new Set();
+        for (let i = 0; i < touches.length; i++) {
+          console.log('touches[i]:',touches[i])
+          const x = touches[i].clientX;
+          const y = touches[i].clientY;
+          const radiusX = touches[i].radiusX || 0;
+          const radiusY = touches[i].radiusY || 0;
+          const indices = getPanelIndices(x, y, radiusX, radiusY);
+          for (const idx of indices) {
+            panels.add(
+              idx
+            );
+          }
+        }
+        return Array.from(panels);
+      }
+
+      function updateTouch(e) {
+          const newPanels = getTouchedPanels(e.touches);
+          console.log('newPanels', newPanels);
+          console.log('prevPanels', prevPanels);
+          console.log('activePanel', activePanel);
+          // 色変化: 新たにタッチされたパネルを赤、離れたパネルを元色、残りは灰色
+          // まず全て灰色に
+          for (let i = 0; i < PANEL_COUNT; i++) {
+            panelColors[i] = '#cccccc';
+          }
+          // タッチ中のパネルを赤に
+          for (const p of newPanels) {
+            
+              console.log('idx', p);
+              panelColors[p] = '#ff8888';
+            
+          }
+          drawPanels();
+
+          // 変化したパネルを検出して送信
+          activeSendPanel = []
+          for (const p of newPanels) {
+              if (!activePanel.includes(p)) {
+                console.log('Activating:', p);
+                activePanel.push(p);
+                activeSendPanel.push(p);
+              }
+          }
+          if(activeSendPanel.length > 0)sendTouchInfo(true, activeSendPanel);
+
+          deactiveSendPanel = []
+          for (const p of prevPanels) {
+              
+              if (!newPanels.includes(p)) {
+                console.log('Deactivating:', p);
+                activePanel = activePanel.filter(i => i !== p);
+                deactiveSendPanel.push(p);
+                
+              }
+          }
+          if(deactiveSendPanel.length > 0)sendTouchInfo(false, deactiveSendPanel);
+          prevPanels = newPanels;
+          console.log('final activePanel', activePanel);
+
+      }
+
+      document.addEventListener('touchstart', function(e) {
+        console.log('touchstart');
+        e.preventDefault();
+        isTouching = true;
+        updateTouch(e);
+        prevTouching = true;
+      }, { passive: false });
+
+      document.addEventListener('touchmove', function(e) {
+        console.log('touchmove');
+        e.preventDefault();
+        updateTouch(e);
+      }, { passive: false });
+
+      document.addEventListener('touchend', function(e) {
+        console.log('touchend');
+        updateTouch(e);
+        prevTouching = false;
+      }, { passive: false });
+    </script>
+  </body>
+</html>
