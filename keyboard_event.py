@@ -2,7 +2,7 @@ from queue import Queue
 import time
 import ctypes
 from unbind_all import unbind
-import keyboard
+
 #SendInput = ctypes.windll.user32.SendInput
 
 # C struct redefinitions
@@ -100,47 +100,3 @@ def SafePressKey(key_name,waiter=0.1):
         unbind(ReleaseKey)
         raise e()
     
-def get_keyevent():
-    r=[0,0,0,0]
-    get_key_list = [code for code in keyboard._pressed_events]
-    if 72 in get_key_list:
-        r[0] = 1
-    if 80 in get_key_list:
-        r[1] = 1
-    if 75 in get_key_list:
-        r[2] = 1
-    if 77 in get_key_list:
-        r[3] = 1
-    return r
-class key_event:
-    def __init__(self):
-        self.key_q=Queue()
-        self.last_key=Queue()
-        pass
-    def add(self,key):
-        self.key_q.put_nowait(key)
-    def execute(self,waiter=1/360,timer=None):
-        t_func=time.time
-        if not time is None:
-            t_func=timer
-        s_t=time.time()
-        while not self.last_key.empty():
-            k=self.last_key.get()
-            ReleaseKey(k)
-        while not self.key_q.empty():
-            k=self.key_q.get_nowait()
-            self.last_key.put_nowait(k)
-            PressKey(k)
-        time.sleep(waiter)
-
-        return 0
-    def reset(self):
-        while not self.key_q.empty():
-            self.key_q.get_nowait()
-        return 
-
-#(0,0) (64,67) (776,894)
-#東方輝針城　～ Double Dealing Character. ver 1.00a
-#
-#
-#
